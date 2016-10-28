@@ -1,0 +1,102 @@
+var fs = require('fs');
+var stream = require('stream');
+const readLine = require('readline');
+
+function BulletinTableParser(months, monthColPos, optionTypeColumnPos, monthWordCharCount,
+                             tableColumnCount, columnsAtNumber, tableName){
+    var tables = {
+        months: [],
+        optionTypes: [],
+        table:{
+            rows: []
+        }
+    };
+
+    var addToTable = function(currentMonth, currentOptionType, lineArr){
+        var addToArrIfNotExist = function(value, arr){
+            var index = arr.indexOf(value);
+            return index != -1 ? index : arr.push(value);
+        };
+
+        var currentMonthIndex = addToArrIfNotExist(currentMonth, tables.months);
+        var currentOptionTypeIndex = addToArrIfNotExist(currentOptionType, tables.optionTypes);
+        var row = {
+            monthId: currentMonthIndex,
+            optionTypeId: currentOptionTypeIndex,
+            data: lineArr
+        };
+        tables.table.rows.push(row);
+    };
+
+    var split = function(str){
+        return str.replace(/ {1}[+]/g,'+').replace(/ {1}[-]/g,'-').split(' ').filter(s => s != '');
+    };
+
+    var getMonth = function(splitedLine){
+        return splitedLine[monthColPos];
+    };
+
+    var getOptionType = function(line) {
+        var splitedLine = line.trim().replace(/ {2,}/g,"@").split("@");
+        return splitedLine[optionTypeColumnPos];
+    };
+
+    var isTableRow = function(splitedLine){
+        if (splitedLine.length == tableColumnCount){
+            for (var i = 0; i < columnsAtNumber.length; i++){
+                var cellData = splitedLine[columnsAtNumber[i]];
+                if (isNaN(cellData)) return false;
+            }
+            return true;
+        }
+        return false;
+    };
+
+    var isBeginSection = function (splitedLine) {
+        for(var i = 0; i < months.length; i++){
+            if (splitedLine[monthColPos].includes(months[i])
+                && splitedLine[monthColPos].length == monthWordCharCount) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    var createLineProcessor = function(){
+        var currentMonth;
+        var currentOptionType;
+        var startProcessLine = function(line) {
+            var splitedLine = split(line);
+            if (splitedLine.length == 0) return;
+            if (isBeginSection(splitedLine)){
+                currentMonth = getMonth(splitedLine);
+                currentOptionType = getOptionType(line);
+            }else if (isTableRow(splitedLine)){
+                addToTable(currentMonth, currentOptionType, splitedLine);
+            }
+        };
+        return startProcessLine;
+    };
+
+    this.parseTable = function(txtFilePath, callback){
+        var tableStarted = false;
+        var processLine = createLineProcessor();
+        var instream = fs.createReadStream(txtFilePath);
+        var outstream = new stream;
+        var rl = readLine.createInterface(instream, outstream);
+        rl.on('line', function (line) {
+            if (!tableStarted){
+                if (line.includes(tableName)) {
+                    tableStarted = true;
+                }
+            } else {
+                processLine(line);
+            }
+        });
+        rl.on('close', function () {
+            callback(null, tables);
+        });
+    }
+}
+
+module.exports = BulletinTableParser;
